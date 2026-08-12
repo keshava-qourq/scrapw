@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Product Search Engine
 
 An async, multi-marketplace product search and comparison API (Amazon, Flipkart, AJIO, Myntra).
@@ -274,3 +275,6 @@ Architecture supports these but they are not implemented (see `backend/app/schem
   via scraping would mean evading bot detection and breaking those sites' terms of service,
   which this project won't do (see Hard rules in `CLAUDE.md`). The `/watchlist` endpoints are
   the practical alternative: a manually-curated price board instead of an automated feed.
+=======
+# scrapw
+>>>>>>> 5a1bd80a1dd64d767950409542542a7773a1f165
