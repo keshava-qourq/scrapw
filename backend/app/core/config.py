@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     search_rate_limit: str = "30/minute"
     max_concurrent_providers: int = 4
 
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24
+    auth_rate_limit: str = "10/minute"
+
     def marketplace_settings(self, marketplace: str) -> MarketplaceSettings:
         prefix = marketplace.lower()
         return MarketplaceSettings(

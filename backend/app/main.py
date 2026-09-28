@@ -1,14 +1,21 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.deps import get_search_index
-from app.api.v1 import cards, categories, health, live_search, marketplaces, products, watchlist
+from app.api.deps import get_current_user, get_search_index
+from app.api.v1 import auth, cards, categories, health, live_search, marketplaces, products, watchlist
 from app.core.config import get_settings
-from app.core.exceptions import AppError, NotFoundError, SearchIndexError, ValidationError
+from app.core.exceptions import (
+    AppError,
+    AuthError,
+    ConflictError,
+    NotFoundError,
+    SearchIndexError,
+    ValidationError,
+)
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import limiter
 
@@ -41,6 +48,16 @@ async def not_found_handler(request: Request, exc: NotFoundError) -> JSONRespons
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
+@app.exception_handler(AuthError)
+async def auth_error_handler(request: Request, exc: AuthError) -> JSONResponse:
+    return JSONResponse(status_code=401, content={"detail": str(exc)}, headers={"WWW-Authenticate": "Bearer"})
+
+
+@app.exception_handler(ConflictError)
+async def conflict_error_handler(request: Request, exc: ConflictError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
 @app.exception_handler(ValidationError)
 async def validation_error_handler(request: Request, exc: ValidationError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
@@ -58,10 +75,15 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": "Internal error"})
 
 
+# Public: liveness checks and the login/signup endpoints themselves.
 app.include_router(health.router, prefix=settings.api_v1_prefix)
-app.include_router(products.router, prefix=settings.api_v1_prefix)
-app.include_router(marketplaces.router, prefix=settings.api_v1_prefix)
-app.include_router(categories.router, prefix=settings.api_v1_prefix)
-app.include_router(watchlist.router, prefix=settings.api_v1_prefix)
-app.include_router(live_search.router, prefix=settings.api_v1_prefix)
-app.include_router(cards.router, prefix=settings.api_v1_prefix)
+app.include_router(auth.router, prefix=settings.api_v1_prefix)
+
+# Everything else requires a logged-in user.
+_requires_login = [Depends(get_current_user)]
+app.include_router(products.router, prefix=settings.api_v1_prefix, dependencies=_requires_login)
+app.include_router(marketplaces.router, prefix=settings.api_v1_prefix, dependencies=_requires_login)
+app.include_router(categories.router, prefix=settings.api_v1_prefix, dependencies=_requires_login)
+app.include_router(watchlist.router, prefix=settings.api_v1_prefix, dependencies=_requires_login)
+app.include_router(live_search.router, prefix=settings.api_v1_prefix, dependencies=_requires_login)
+app.include_router(cards.router, prefix=settings.api_v1_prefix, dependencies=_requires_login)

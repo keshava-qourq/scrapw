@@ -46,7 +46,8 @@ class SerpApiProductSearchProvider(ProductSearchProvider):
             logger.warning("serpapi_http_error", status=exc.response.status_code, query=query)
             raise ProviderUnavailableError(f"SerpApi returned {exc.response.status_code}") from exc
         except httpx.HTTPError as exc:
-            logger.warning("serpapi_request_failed", error=str(exc), query=query)
+            # Log the exception type only: SerpApi's key is a URL param, and httpx errors can quote the URL.
+            logger.warning("serpapi_request_failed", error=type(exc).__name__, query=query)
             raise ProviderUnavailableError("SerpApi request failed") from exc
 
         if error := payload.get("error"):

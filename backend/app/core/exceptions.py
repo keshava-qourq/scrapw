@@ -10,6 +10,14 @@ class ValidationError(AppError):
     """Input failed domain validation."""
 
 
+class AuthError(AppError):
+    """Missing, invalid, or expired credentials."""
+
+
+class ConflictError(AppError):
+    """Request conflicts with existing state (e.g. a duplicate unique value)."""
+
+
 class MarketplaceError(AppError):
     """Base error for marketplace connector failures."""
 

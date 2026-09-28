@@ -54,7 +54,10 @@ class GeminiClient:
 
         try:
             async with httpx.AsyncClient(timeout=self._settings.gemini_timeout_seconds) as client:
-                response = await client.post(url, params={"key": self._settings.gemini_api_key}, json=body)
+                # Key goes in a header, not `?key=`, so it never appears in URLs (or the error messages that quote them).
+                response = await client.post(
+                    url, headers={"x-goog-api-key": self._settings.gemini_api_key}, json=body
+                )
                 response.raise_for_status()
                 payload = response.json()
                 text = payload["candidates"][0]["content"]["parts"][0]["text"]

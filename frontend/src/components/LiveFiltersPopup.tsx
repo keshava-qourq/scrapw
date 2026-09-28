@@ -1,6 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, type Variants } from "motion/react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { LiveMarketplace } from "../types";
 import { LIVE_MARKETPLACES } from "../types";
+import Field from "./ui/Field";
+import { CloseIcon, SlidersIcon } from "./ui/icons";
+import RollText from "./ui/RollText";
+import { EASE, lockScroll } from "./ui/motion";
 
 export interface LiveFilters {
   marketplace?: LiveMarketplace;
@@ -20,21 +26,55 @@ function countActive(f: LiveFilters): number {
   return Object.values(f).filter((v) => v !== undefined).length;
 }
 
+const section: Variants = {
+  closed: { opacity: 0, y: 24 },
+  open: (i: number) => ({ opacity: 1, y: 0, transition: { delay: 0.18 + i * 0.07, duration: 0.7, ease: EASE } }),
+};
+
+function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-full border px-4 py-2 text-[13px] transition-all duration-300 ease-expo ${
+        active ? "border-ink bg-ink text-paper" : "border-line text-ink hover:border-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SectionTitle({ n, children }: { n: string; children: ReactNode }) {
+  return (
+    <h3 className="mb-4 flex items-baseline gap-3 text-[15px] font-medium">
+      <span className="font-mono text-[10px] tracking-[0.16em] text-ash">{n}</span>
+      {children}
+    </h3>
+  );
+}
+
+/** Filters live in a slide-over drawer from the right. */
 export default function LiveFiltersPopup({ filters, onApply }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<LiveFilters>(filters);
-  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) setDraft(filters);
   }, [open, filters]);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    if (open) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    if (!open) return;
+    lockScroll(true);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      lockScroll(false);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, [open]);
 
   const activeCount = countActive(filters);
@@ -51,102 +91,140 @@ export default function LiveFiltersPopup({ filters, onApply }: Props) {
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+        onClick={() => setOpen(true)}
+        className="flex h-10 items-center gap-2 rounded-full border border-line px-4 text-[13px] font-medium transition-colors duration-300 hover:border-ink"
       >
-        <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m9 12h3.75M16.5 18a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0M3.75 18H13.5m-9-6h9.75m-9.75 0a1.5 1.5 0 003 0m-3 0a1.5 1.5 0 013 0m9.75 0H21" />
-        </svg>
+        <SlidersIcon />
         Filters
-        {activeCount > 0 && (
-          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-semibold text-white">
-            {activeCount}
-          </span>
-        )}
+        <AnimatePresence>
+          {activeCount > 0 && (
+            <motion.span
+              key={activeCount}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 22 }}
+              className="flex h-5 min-w-5 items-center justify-center rounded-full bg-acid px-1 font-mono text-[10px]"
+            >
+              {activeCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
       </button>
 
-      {open && (
-        <div className="absolute left-0 z-20 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-4 shadow-lg">
-          <div className="mb-3">
-            <h3 className="mb-2 text-sm font-semibold text-slate-800">Marketplace</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {LIVE_MARKETPLACES.map((mp) => (
-                <button
-                  key={mp}
-                  type="button"
-                  onClick={() => setDraft((d) => ({ ...d, marketplace: d.marketplace === mp ? undefined : mp }))}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium capitalize transition ${
-                    draft.marketplace === mp
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 text-slate-600 hover:border-slate-300"
-                  }`}
-                >
-                  {mp}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-3">
-            <h3 className="mb-2 text-sm font-semibold text-slate-800">Price range (₹)</h3>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={0}
-                value={draft.min_price ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, min_price: e.target.value ? Number(e.target.value) : undefined }))}
-                placeholder="Min"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              />
-              <span className="text-slate-400">–</span>
-              <input
-                type="number"
-                min={0}
-                value={draft.max_price ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, max_price: e.target.value ? Number(e.target.value) : undefined }))}
-                placeholder="Max"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
-              />
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-800">Minimum rating</h3>
-            <div className="flex gap-1.5">
-              {[3, 3.5, 4, 4.5].map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setDraft((d) => ({ ...d, min_rating: d.min_rating === r ? undefined : r }))}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                    draft.min_rating === r
-                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 text-slate-600 hover:border-slate-300"
-                  }`}
-                >
-                  {r}+★
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <button type="button" onClick={reset} className="text-sm font-medium text-slate-500 hover:text-slate-700">
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={apply}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-500"
+      {/* Portaled so ancestors' transforms/filters (page transitions) can't trap the fixed overlay. */}
+      {createPortal(
+      <AnimatePresence>
+        {open && (
+          <motion.div className="fixed inset-0 z-[80]" initial="closed" animate="open" exit="closed">
+            <motion.div
+              className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
+              variants={{ closed: { opacity: 0 }, open: { opacity: 1 } }}
+              transition={{ duration: 0.5 }}
+              onClick={() => setOpen(false)}
+            />
+            <motion.aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Filters"
+              data-lenis-prevent
+              variants={{ closed: { x: "100%" }, open: { x: "0%" } }}
+              transition={{ type: "spring", stiffness: 240, damping: 32 }}
+              className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-paper shadow-2xl"
             >
-              Apply filters
-            </button>
-          </div>
-        </div>
+              <div className="flex items-center justify-between border-b border-line px-6 py-5">
+                <h2 className="font-serif text-4xl italic tracking-[-0.02em]">Filters</h2>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close filters"
+                  className="group flex h-11 w-11 items-center justify-center rounded-full border border-line transition-colors duration-300 hover:border-ink hover:bg-ink hover:text-paper"
+                >
+                  <CloseIcon className="h-5 w-5 transition-transform duration-500 ease-expo group-hover:rotate-90" />
+                </button>
+              </div>
+
+              <div className="flex-1 space-y-12 overflow-y-auto px-6 py-10">
+                <motion.section variants={section} custom={0}>
+                  <SectionTitle n="01">Marketplace</SectionTitle>
+                  <div className="flex flex-wrap gap-2">
+                    {LIVE_MARKETPLACES.map((mp) => (
+                      <Chip
+                        key={mp}
+                        active={draft.marketplace === mp}
+                        onClick={() => setDraft((d) => ({ ...d, marketplace: d.marketplace === mp ? undefined : mp }))}
+                      >
+                        {mp === "AJIO" ? "AJIO" : mp.charAt(0) + mp.slice(1).toLowerCase()}
+                      </Chip>
+                    ))}
+                  </div>
+                </motion.section>
+
+                <motion.section variants={section} custom={1}>
+                  <SectionTitle n="02">Price range</SectionTitle>
+                  <div className="grid grid-cols-2 gap-6">
+                    <Field
+                      label="Min ₹"
+                      type="number"
+                      min={0}
+                      value={draft.min_price ?? ""}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, min_price: e.target.value ? Number(e.target.value) : undefined }))
+                      }
+                    />
+                    <Field
+                      label="Max ₹"
+                      type="number"
+                      min={0}
+                      value={draft.max_price ?? ""}
+                      onChange={(e) =>
+                        setDraft((d) => ({ ...d, max_price: e.target.value ? Number(e.target.value) : undefined }))
+                      }
+                    />
+                  </div>
+                </motion.section>
+
+                <motion.section variants={section} custom={2}>
+                  <SectionTitle n="03">Minimum rating</SectionTitle>
+                  <div className="flex flex-wrap gap-2">
+                    {[3, 3.5, 4, 4.5].map((r) => (
+                      <Chip
+                        key={r}
+                        active={draft.min_rating === r}
+                        onClick={() => setDraft((d) => ({ ...d, min_rating: d.min_rating === r ? undefined : r }))}
+                      >
+                        {r}+ ★
+                      </Chip>
+                    ))}
+                  </div>
+                </motion.section>
+              </div>
+
+              <div className="flex gap-3 border-t border-line px-6 py-5">
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="h-12 rounded-full border border-line px-6 text-[14px] font-medium transition-colors hover:border-ink"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={apply}
+                  className="group h-12 flex-1 rounded-full bg-ink text-[14px] font-medium text-paper transition-colors duration-500 hover:bg-acid hover:text-ink"
+                >
+                  <RollText>Show results</RollText>
+                </button>
+              </div>
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>,
+      document.body,
       )}
-    </div>
+    </>
   );
 }

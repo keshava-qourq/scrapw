@@ -2,17 +2,23 @@ from collections.abc import AsyncGenerator
 from functools import lru_cache
 
 from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.query_processor import GeminiQueryProcessor
 from app.cache.search_cache import RedisSearchCache, SearchCache
 from app.core.config import Settings, get_settings
+from app.core.exceptions import AuthError
+from app.core.security import decode_access_token
 from app.db.database import get_db
+from app.models.user import User
 from app.providers.base import ProductSearchProvider
 from app.providers.serpapi_provider import SerpApiProductSearchProvider
 from app.repositories.search_repository import SearchRepository
+from app.repositories.user_repository import UserRepository
 from app.search.base import SearchIndex
 from app.search.opensearch import OpenSearchIndex
+from app.services.auth_service import AuthService
 from app.services.card_offer_service import CardOfferService
 from app.services.live_search_service import LiveSearchService
 from app.services.product_service import ProductService
@@ -97,3 +103,26 @@ async def get_card_offer_service(
     session: AsyncSession = Depends(get_db),
 ) -> AsyncGenerator[CardOfferService, None]:
     yield CardOfferService(session)
+
+
+async def get_auth_service(
+    session: AsyncSession = Depends(get_db),
+) -> AsyncGenerator[AuthService, None]:
+    yield AuthService(UserRepository(session))
+
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    service: AuthService = Depends(get_auth_service),
+) -> User:
+    """Resolve the `Authorization: Bearer <token>` header to an active user,
+    or fail the request with 401."""
+    if credentials is None:
+        raise AuthError("Not authenticated")
+    user = await service.get_active_user(decode_access_token(credentials.credentials))
+    if user is None:
+        raise AuthError("Invalid or expired token")
+    return user

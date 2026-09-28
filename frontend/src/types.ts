@@ -99,3 +99,16 @@ export const LIVE_SORT_OPTIONS: { value: LiveSortOption; label: string }[] = [
   { value: "rating", label: "Rating" },
   { value: "discount", label: "Discount" },
 ];
+
+export interface User {
+  id: string;
+  email: string;
+  created_at: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: "bearer";
+  expires_in: number;
+  user: User;
+}

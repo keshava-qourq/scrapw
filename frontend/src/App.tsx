@@ -1,44 +1,116 @@
-import { useState } from "react";
-import WatchlistView from "./components/WatchlistView";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { useCallback, useEffect, useState } from "react";
+import { useRoute } from "./router";
+import { AUTH_EXPIRED_EVENT, getCurrentUser, logout } from "./api";
+import Footer from "./components/Footer";
+import Header, { type Tab } from "./components/Header";
 import LiveSearchView from "./components/LiveSearchView";
+import LoginView from "./components/LoginView";
+import WatchlistView from "./components/WatchlistView";
+import Cursor from "./components/ui/Cursor";
+import Intro from "./components/ui/Intro";
+import Wordmark from "./components/ui/Wordmark";
+import { EASE, scrollToTop, shouldPlayIntro, startSmoothScroll } from "./components/ui/motion";
+import type { User } from "./types";
 
 export default function App() {
-  const [tab, setTab] = useState<"live" | "compare">("live");
+  const { route, navigate, goBack } = useRoute();
+  const tab = route.view;
+  const [user, setUser] = useState<User | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [playingIntro, setPlayingIntro] = useState(shouldPlayIntro);
+  const finishIntro = useCallback(() => setPlayingIntro(false), []);
+
+  useEffect(() => startSmoothScroll(), []);
+
+  useEffect(() => {
+    getCurrentUser()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setCheckingSession(false));
+
+    const handleExpired = () => setUser(null);
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+  }, []);
+
+  function handleLogout() {
+    logout();
+    setUser(null);
+  }
+
+  // Tabs (and the logo) always land on the top of a view — "Home" also clears any search.
+  function handleTabChange(next: Tab) {
+    scrollToTop();
+    navigate({ view: next, q: null, page: 1 });
+  }
+
+  const handleSearchNavigate = useCallback(
+    (q: string | null, page: number, replace = false) => navigate({ view: "live", q, page }, { replace }),
+    [navigate],
+  );
+
+  // While the intro plays nothing mounts underneath, so each screen's entrance animations run as the curtain lifts.
+  const screen = playingIntro ? "intro" : checkingSession ? "splash" : user ? "app" : "login";
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3h1.5l1.5 12.75h11.25M6.75 15.75L8.25 6h11.63l-1.4 9.75M9 20.25a.75.75 0 100-1.5.75.75 0 000 1.5zM18 20.25a.75.75 0 100-1.5.75.75 0 000 1.5z" />
-              </svg>
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-slate-900">ScrapW Search</span>
-            <div className="ml-4 flex gap-1 rounded-lg bg-slate-100 p-1">
-              <button
-                onClick={() => setTab("live")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  tab === "live" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                Live search
-              </button>
-              <button
-                onClick={() => setTab("compare")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  tab === "compare" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                Compare prices
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <MotionConfig reducedMotion="user">
+      <div className="grain min-h-screen overflow-x-clip">
+        <Cursor />
+        <AnimatePresence>{playingIntro && <Intro key="intro" onDone={finishIntro} />}</AnimatePresence>
+        <AnimatePresence mode="wait">
+          {screen === "splash" && (
+            <motion.div
+              key="splash"
+              exit={{ opacity: 0 }}
+              className="flex min-h-screen items-center justify-center"
+            >
+              <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.6, repeat: Infinity }}>
+                <Wordmark />
+              </motion.div>
+            </motion.div>
+          )}
 
-      {tab === "compare" ? <WatchlistView /> : <LiveSearchView />}
-    </div>
+          {screen === "login" && (
+            <motion.div key="login" exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.5, ease: EASE }}>
+              <LoginView onAuthenticated={setUser} />
+            </motion.div>
+          )}
+
+          {screen === "app" && user && (
+            <motion.div
+              key="app"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.6, ease: EASE }}
+            >
+              <Header tab={tab} onTabChange={handleTabChange} user={user} onLogout={handleLogout} />
+              <AnimatePresence mode="wait">
+                <motion.main
+                  key={tab}
+                  initial={{ opacity: 0, y: 28, filter: "blur(10px)" }}
+                  animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                  exit={{ opacity: 0, y: -18, filter: "blur(8px)" }}
+                  transition={{ duration: 0.65, ease: EASE }}
+                >
+                  {tab === "compare" ? (
+                    <WatchlistView />
+                  ) : (
+                    <LiveSearchView
+                      routeQuery={route.q}
+                      routePage={route.page}
+                      onNavigate={handleSearchNavigate}
+                      onBack={goBack}
+                    />
+                  )}
+                </motion.main>
+              </AnimatePresence>
+              <Footer />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </MotionConfig>
   );
 }
